@@ -13,3 +13,8 @@ _Степанов Ярослав_
 ## text_analyzer
 
 [Папка text_analyzer](./text_analyzer/)
+
+## plib
+
+[Папка plib](./plib/)
+
