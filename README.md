@@ -28,4 +28,5 @@ _Степанов Ярослав_
 
 ## best_program
 
+[README.md](./best_program/README.md)
 [Папка best_program](./best_program/)
