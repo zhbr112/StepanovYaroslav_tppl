@@ -22,3 +22,13 @@ make
 ./data_collector
 ```
 Данные сохраняются в файл sensor_data.txt
+
+## Запуск тестов
+```bash
+./collector_tests
+```
+
+## Проверка покртытия
+```bash
+gcovr -r .. . --exclude '.*main\.cpp'
+```
