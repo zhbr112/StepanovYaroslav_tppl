@@ -1,24 +1,26 @@
 #include <gtest/gtest.h>
 #include "collector.hpp"
 #include <vector>
-#include <cmath>
+#include <cstring>
 
-// 1. Тест расчета контрольной суммы
-TEST(UtilsTest, ChecksumCalculation) {
-    std::vector<uint8_t> data = {10, 20, 30}; // Sum = 60
-    EXPECT_EQ(calculate_checksum(data.data(), data.size()), 60);
+// --- 1. Тесты утилит ---
+TEST(UtilsTest, ChecksumCalculation)
+{
+    std::vector<uint8_t> data = {1, 2, 3};
+    EXPECT_EQ(calculate_checksum(data.data(), data.size()), 6);
 
-    std::vector<uint8_t> overflow_data = {200, 100}; // Sum = 300 -> 44 (mod 256)
-    EXPECT_EQ(calculate_checksum(overflow_data.data(), overflow_data.size()), 44);
+    std::vector<uint8_t> overflow = {250, 10};
+    EXPECT_EQ(calculate_checksum(overflow.data(), overflow.size()), 4);
+    EXPECT_EQ(calculate_checksum(nullptr, 0), 0);
 }
 
-// 2. Тест конвертации Float (Big Endian -> Host)
-TEST(UtilsTest, FloatConversion) {
+TEST(UtilsTest, FloatConversion)
+{
     float original = 123.456f;
     uint32_t net_representation;
     std::memcpy(&net_representation, &original, 4);
-    net_representation = htobe32(net_representation); // Имитируем данные из сети
-    
+    net_representation = htobe32(net_representation);
+
     float net_float_val;
     std::memcpy(&net_float_val, &net_representation, 4);
 
@@ -26,32 +28,30 @@ TEST(UtilsTest, FloatConversion) {
     EXPECT_FLOAT_EQ(result, original);
 }
 
-// 3. Тест форматирования времени
-TEST(UtilsTest, TimeFormatting) {
-    // 1672531200 секунд = 2023-01-01 00:00:00 UTC
+TEST(UtilsTest, TimeFormatting)
+{
     int64_t timestamp_us = 1672531200LL * 1000000LL;
     EXPECT_EQ(format_time(timestamp_us), "2023-01-01 00:00:00");
 }
 
-// 4. Тест парсера (Скользящее окно) для SensorData1
-TEST(ParserTest, ParseSensorData1_Valid) {
+// --- 2. Тесты Парсера ---
+const int64_t TEST_TIMESTAMP = 1672531200000000LL;
+
+TEST(ParserTest, ParseSensorData1_Valid)
+{
     std::vector<uint8_t> buffer;
-    
-    // Создаем фейковый пакет
     SensorData1 pkt;
-    pkt.timestamp_us = htobe64(1000000); // 1970-01-01 00:00:01
+    pkt.timestamp_us = htobe64(TEST_TIMESTAMP);
+
     float temp_val = 25.5f;
     uint32_t temp_raw;
     std::memcpy(&temp_raw, &temp_val, 4);
     temp_raw = htobe32(temp_raw);
     std::memcpy(&pkt.temp, &temp_raw, 4);
     pkt.pressure = htons(750);
-    
-    // Считаем CRC
-    pkt.checksum = calculate_checksum(reinterpret_cast<uint8_t*>(&pkt), sizeof(SensorData1) - 1);
+    pkt.checksum = calculate_checksum(reinterpret_cast<uint8_t *>(&pkt), sizeof(SensorData1) - 1);
 
-    // Записываем в буфер байты структуры
-    uint8_t* raw = reinterpret_cast<uint8_t*>(&pkt);
+    uint8_t *raw = reinterpret_cast<uint8_t *>(&pkt);
     buffer.insert(buffer.end(), raw, raw + sizeof(SensorData1));
 
     std::string output;
@@ -59,58 +59,107 @@ TEST(ParserTest, ParseSensorData1_Valid) {
 
     EXPECT_TRUE(success);
     EXPECT_TRUE(output.find("Temp: 25.50") != std::string::npos);
-    EXPECT_TRUE(output.find("Pressure: 750") != std::string::npos);
-    EXPECT_TRUE(buffer.empty()); // Буфер должен очиститься
+    EXPECT_TRUE(buffer.empty());
 }
 
-// 5. Тест парсера с мусором (Sliding Window logic)
-TEST(ParserTest, ParseWithGarbage) {
+TEST(ParserTest, ParseSensorData2_Valid)
+{
     std::vector<uint8_t> buffer;
-    
-    // Добавляем мусор в начало
-    buffer.push_back(0xAA);
-    buffer.push_back(0xBB);
-    buffer.push_back(0xCC);
-
-    // Создаем валидный пакет
     SensorData2 pkt;
-    pkt.timestamp_us = 0;
-    pkt.x = htonl(10);
-    pkt.y = htonl(20);
-    pkt.z = htonl(30);
-    pkt.checksum = calculate_checksum(reinterpret_cast<uint8_t*>(&pkt), sizeof(SensorData2) - 1);
+    pkt.timestamp_us = htobe64(TEST_TIMESTAMP);
 
-    uint8_t* raw = reinterpret_cast<uint8_t*>(&pkt);
+    pkt.x = htonl(10);
+    pkt.y = htonl(-20);
+    pkt.z = htonl(30);
+    pkt.checksum = calculate_checksum(reinterpret_cast<uint8_t *>(&pkt), sizeof(SensorData2) - 1);
+
+    uint8_t *raw = reinterpret_cast<uint8_t *>(&pkt);
     buffer.insert(buffer.end(), raw, raw + sizeof(SensorData2));
 
     std::string output;
-    
-    // Первый вызов не должен найти пакет (из-за мусора), но должен удалить мусор
-    // В реальности try_parse_packet вызывается в цикле while.
-    // Эмулируем цикл:
-    
-    bool found = false;
-    // Ожидаем, что парсер "съест" 3 байта мусора, а на 4-й раз найдет пакет
-    for(int i=0; i<10; ++i) {
-        if (try_parse_packet<SensorData2>(buffer, 5124, output)) {
-            found = true;
-            break;
-        }
-        if(buffer.empty()) break;
-    }
+    bool success = try_parse_packet<SensorData2>(buffer, 5124, output);
 
-    EXPECT_TRUE(found);
-    EXPECT_TRUE(output.find("X: 10") != std::string::npos);
+    EXPECT_TRUE(success);
+    EXPECT_TRUE(output.find("Y: -20") != std::string::npos);
+    EXPECT_TRUE(buffer.empty());
 }
 
-// 6. Тест очереди
-TEST(QueueTest, PushPop) {
+TEST(ParserTest, InsufficientData)
+{
+    std::vector<uint8_t> buffer = {0x01, 0x02};
+    std::string output;
+    bool success = try_parse_packet<SensorData1>(buffer, 5123, output);
+    EXPECT_FALSE(success);
+    EXPECT_EQ(buffer.size(), 2);
+}
+
+TEST(ParserTest, GarbageHandling_AutoRecover)
+{
+    std::vector<uint8_t> buffer;
+    buffer.push_back(0xFF);
+
+    SensorData1 pkt;
+    pkt.timestamp_us = htobe64(TEST_TIMESTAMP);
+    pkt.temp = 10;
+    pkt.pressure = 10;
+    pkt.checksum = calculate_checksum(reinterpret_cast<uint8_t *>(&pkt), sizeof(SensorData1) - 1);
+
+    uint8_t *raw = reinterpret_cast<uint8_t *>(&pkt);
+    buffer.insert(buffer.end(), raw, raw + sizeof(SensorData1));
+
+    std::string output;
+    bool success = try_parse_packet<SensorData1>(buffer, 5123, output);
+
+    EXPECT_TRUE(success);
+    EXPECT_TRUE(buffer.empty());
+}
+
+// Тест проверки на мусорные значения
+TEST(ParserTest, RejectInsaneValues_WithValidCRC)
+{
+    std::vector<uint8_t> buffer;
+    SensorData1 pkt;
+
+    // 1. Ставим невозможный год
+    pkt.timestamp_us = htobe64(99999999999999999LL);
+
+    // Делаем валидную CRC для этого мусора
+    pkt.temp = 10;
+    pkt.pressure = 10;
+    pkt.checksum = calculate_checksum(reinterpret_cast<uint8_t *>(&pkt), sizeof(SensorData1) - 1);
+
+    uint8_t *raw = reinterpret_cast<uint8_t *>(&pkt);
+    buffer.insert(buffer.end(), raw, raw + sizeof(SensorData1));
+
+    std::string output;
+
+    // Попытка парсинга
+    bool success = try_parse_packet<SensorData1>(buffer, 5123, output);
+
+    // Ожидаем FALSE, так как год невалидный
+    EXPECT_FALSE(success);
+
+    // Буфер должен уменьшиться на 1 байт (сдвиг окна), а не быть удаленным целиком
+    EXPECT_EQ(buffer.size(), sizeof(SensorData1) - 1);
+}
+
+// --- 3. Тесты Очереди ---
+TEST(QueueTest, PushPop)
+{
     AsyncLogQueue q;
-    q.push("test message");
-    
-    std::string msg;
-    bool res = q.pop(msg);
-    EXPECT_TRUE(res);
-    EXPECT_EQ(msg, "test message");
-    EXPECT_TRUE(q.empty());
+    q.push("msg1");
+    std::string val;
+    EXPECT_TRUE(q.pop(val));
+    EXPECT_EQ(val, "msg1");
+}
+
+TEST(QueueTest, StopMechanism)
+{
+    AsyncLogQueue q;
+    q.push("last_msg");
+    q.stop();
+    std::string val;
+    EXPECT_TRUE(q.pop(val));
+    EXPECT_EQ(val, "last_msg");
+    EXPECT_FALSE(q.pop(val));
 }

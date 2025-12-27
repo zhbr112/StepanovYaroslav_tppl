@@ -3,6 +3,9 @@ project(NetworkDataCollector)
 
 set(CMAKE_CXX_STANDARD 17)
 
+add_compile_options(--coverage)
+add_link_options(--coverage)
+
 find_package(Threads REQUIRED)
 
 find_package(GTest REQUIRED)

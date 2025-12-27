@@ -1,3 +1,0 @@
-/root/projects/StepanovYaroslav_tppl/best_program/build/CMakeFiles/data_collector.dir
-/root/projects/StepanovYaroslav_tppl/best_program/build/CMakeFiles/edit_cache.dir
-/root/projects/StepanovYaroslav_tppl/best_program/build/CMakeFiles/rebuild_cache.dir
