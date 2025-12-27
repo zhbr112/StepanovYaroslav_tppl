@@ -32,3 +32,10 @@ make
 ```bash
 gcovr -r .. . --exclude '.*main\.cpp'
 ```
+
+```bash
+cmake .. && make
+./collector_tests
+lcov --capture --directory . --output-file coverage_all.info --ignore-errors inconsistent,mismatch 
+lcov --extract coverage_all.info '*collector.hpp' --output-file coverage.info --ignore-errors inconsistent,mismatch
+```
